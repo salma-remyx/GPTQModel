@@ -32,6 +32,7 @@ from .gar import (
     extend_perm_with_tail,
     invert_perm,
 )
+from .grid_refine import refine as grid_refine
 from .npu_linalg import npu_inverse_cholesky_factor
 from .quantizer import HF_OPTIMUM, Quantizer
 
@@ -1101,6 +1102,13 @@ class GPTQ:
         Losses = torch.zeros_like(W)
         Q = torch.zeros_like(W)
 
+        # Pristine weights in the loop's final (possibly permuted) layout. The
+        # quantization loop below mutates W with its error-compensation
+        # residuals; fixed-grid refinement, when enabled, scores candidates
+        # against the original weights.
+        grid_refine_cfg = getattr(self.qcfg, "grid_refine", None)
+        W_orig = W.clone() if grid_refine_cfg is not None else None
+
         # Use simplified loop when mock_quantization is active
         if self.qcfg.mock_quantization:
             for i1 in range(0, self.columns, blocksize):
@@ -1259,6 +1267,43 @@ class GPTQ:
 
         # TODO: why is there a torch_sync here? There are no streaming ops here?
         # torch_sync(device=self.module.target_device)
+
+        if grid_refine_cfg is not None and use_hessian:
+            # Fixed-grid refinement of the just-produced integer assignments on
+            # the frozen (scale, zero, bits) grid. Runs while W/H are still in
+            # the loop's (possibly act-order permuted) layout, before Q is
+            # un-permuted below.
+            maxq_value = int(self.quantizer.maxq.item())
+            if maxq_value <= 0 or self.qcfg.static_groups:
+                log.warn(f"Quantization: Module `{self.name}` -> skipping grid refinement, unsupported grid.")
+            else:
+                if scale:
+                    # one (rows, 1) entry per group, in the loop's column order
+                    refine_scale = torch.cat(scale, dim=1)
+                    refine_zero = torch.cat(zero, dim=1)
+                    refine_group_size = self.qcfg.group_size
+                else:
+                    refine_scale = self.quantizer.scale
+                    refine_zero = self.quantizer.zero
+                    refine_group_size = -1
+
+                Q, loss_before, loss_after = grid_refine(
+                    W_orig,
+                    self.H,
+                    Q,
+                    refine_scale,
+                    refine_zero,
+                    maxq_value,
+                    refine_group_size,
+                    grid_refine_cfg,
+                    groupwise=self.quantizer.requires_groupwise_processing(),
+                )
+                log.info(
+                    f"Quantization: Module `{self.name}` -> grid refinement "
+                    f"{loss_before:.6f} -> {loss_after:.6f} "
+                    f"({(1 - loss_after / loss_before) * 100 if loss_before > 0 else 0.0:.2f}% lower)."
+                )
+        del W_orig
 
         if Hinv is not None:
             del Hinv

@@ -1243,6 +1243,31 @@ class GPTAQConfig:
 
 
 @dataclass
+class GridRefineConfig:
+    r"""Fixed-grid discrete refinement of the integer assignments a PTQ pass produced.
+
+    Refinement stays on the frozen (scale, zero, bits) grid so the serialized
+    format is unchanged; it only revisits which integer level each weight sits
+    at, accepting moves that strictly lower the Hessian-weighted layer
+    reconstruction error. Useful mostly at low bit-widths, where greedy
+    initializers leave the most on the table.
+    """
+
+    sweeps: int = field(default=4)
+    radius: int = field(default=1)
+
+    def __post_init__(self):
+        if not isinstance(self.sweeps, int):
+            raise ValueError("GridRefineConfig: `sweeps` must be an int.")
+        if self.sweeps < 0:
+            raise ValueError("GridRefineConfig: `sweeps` must be >= 0.")
+        if not isinstance(self.radius, int):
+            raise ValueError("GridRefineConfig: `radius` must be an int.")
+        if self.radius < 1:
+            raise ValueError("GridRefineConfig: `radius` must be >= 1.")
+
+
+@dataclass
 class FOEMConfig:
     r"""Configuration parameters for the FOEM calibration process, including `alpha` and `beta`.
 
@@ -2021,6 +2046,20 @@ def _normalize_gptaq(gptaq: Optional[Union[GPTAQConfig, Dict[str, Any]]]) -> Opt
     if not isinstance(gptaq, GPTAQConfig):
         raise ValueError("QuantizeConfig: `gptaq` must be a GPTAQConfig, dict, or None.")
     return gptaq
+
+
+def _normalize_grid_refine(
+    grid_refine: Optional[Union[GridRefineConfig, Dict[str, Any], bool]],
+) -> Optional[GridRefineConfig]:
+    if grid_refine is None or grid_refine is False:
+        return None
+    if grid_refine is True:
+        return GridRefineConfig()
+    if isinstance(grid_refine, dict):
+        return GridRefineConfig(**grid_refine)
+    if not isinstance(grid_refine, GridRefineConfig):
+        raise ValueError("QuantizeConfig: `grid_refine` must be a GridRefineConfig, dict, bool, or None.")
+    return grid_refine
 
 
 def _normalize_foem(foem: Optional[Union[FOEMConfig, Dict[str, Any]]]) -> Optional[FOEMConfig]:
@@ -2933,6 +2972,7 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
             "fallback": "fallback",
             "hessian": "hessian",
             "gptaq": "gptaq",
+            "grid_refine": "grid_refine",
             "foem": "foem",
             "weight_only": "weight_only",
             "preprocessors": "preprocessors",
@@ -3206,6 +3246,13 @@ class GPTQConfig(PreProcessorConfig):
     static_groups: bool = field(default=False)
     mse: float = field(default=0.0)
     gptaq: Optional[GPTAQConfig] = field(default=None)
+    grid_refine: Optional[Union[GridRefineConfig, Dict[str, Any], bool]] = field(
+        default=None,
+        metadata={"help": "Post-quantization fixed-grid refinement of the integer assignments. "
+                  "True uses the default GridRefineConfig; pass a GridRefineConfig or dict to tune "
+                  "`sweeps` and `radius`. The quantization grid (scale/zero/bits) is frozen, so the "
+                  "serialized format is unchanged."},
+    )
     foem: Optional[FOEMConfig] = field(default=None)
     mock_quantization: bool = field(
         default=False,
@@ -3238,6 +3285,7 @@ class GPTQConfig(PreProcessorConfig):
 
         self.hessian = _normalize_hessian(self.hessian)
         self.gptaq = _normalize_gptaq(self.gptaq)
+        self.grid_refine = _normalize_grid_refine(self.grid_refine)
         self.foem = _normalize_foem(self.foem)
 
         if act_group_aware_user_value is None:
@@ -3288,6 +3336,11 @@ class GPTQConfig(PreProcessorConfig):
                 "device": device if isinstance(device, str) else str(device),
             }
 
+        meta_payload["grid_refine"] = (
+            None
+            if self.grid_refine is None
+            else {"sweeps": self.grid_refine.sweeps, "radius": self.grid_refine.radius}
+        )
         meta_payload["mse"] = self.mse
         meta_payload["mock_quantization"] = self.mock_quantization
         meta_payload["act_group_aware"] = self.act_group_aware

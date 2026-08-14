@@ -652,6 +652,20 @@ FOEM (First-order error matters) adds first-order error compensation for GPTQ-st
 # FOEM default hyperparameters are alpha=0.0 and beta=0.2
 quant_config = QuantizeConfig(bits=4, group_size=128, foem=FOEMConfig(alpha=0.0, beta=0.2, device="auto"))
 ```
+
+#### Using Fixed-Grid Refinement
+
+Fixed-grid refinement is an optional post-quantization stage that revisits the discrete integer assignments GPTQ just produced on the frozen (scale/zero/bits) grid, accepting only moves that strictly lower the Hessian-weighted layer reconstruction error. Because the grid is frozen, the serialized checkpoint format is unchanged. Gains are largest at low bit-widths, where greedy initializers leave the most error on the table. Enable it by setting `grid_refine=True` (or a `GridRefineConfig`):
+```py
+# sweeps bounds the refinement iterations; radius is how many grid levels a
+# weight may move per step. Defaults are sweeps=4, radius=1.
+quant_config = QuantizeConfig(bits=2, group_size=128, grid_refine=True)
+# or, tuned:
+quant_config = QuantizeConfig(bits=2, group_size=128, grid_refine=GridRefineConfig(sweeps=8, radius=1))
+```
+
+Adapted from ReQuant: Fixed-Grid Discrete Refinement for Post-Training Quantization (arXiv:2608.07019).
+
 ### Migrating from AutoGPTQ and AutoAWQ:
 
 GPT-QModel has fully supplanted AutoGPTQ and AutoAWQ for HF Transformers/Optimum/Peft integration. Model inference has drop-in support with zero changes. 

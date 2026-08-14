@@ -25,6 +25,7 @@ from .config import (
                      GGUFBits,
                      GGUFConfig,
                      GPTAQConfig,
+                     GridRefineConfig,
                      GPTQConfig,
                      HessianConfig,
                      ParoConfig,
