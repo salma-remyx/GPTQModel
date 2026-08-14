@@ -809,7 +809,9 @@ class BaseQModel(nn.Module):
         backend: Optional[BACKEND] = BACKEND.AUTO,
         # eora adapter generation needs config Lora(rank=1, path='lora.safetensors')
         adapter: Adapter = None,
-        adapter_calibration_dataset: Union[List[Dict[str, Union[List[int], torch.LongTensor]]], List[str], List[int]] = None,
+        # pass a Dict[str, dataset] mapping language tag -> calibration examples to generate
+        # one correction adapter per language (LanguageAwareLora) instead of a single EoRA adapter
+        adapter_calibration_dataset: Union[List[Dict[str, Union[List[int], torch.LongTensor]]], List[str], List[int], Dict[str, List]] = None,
         # minimum length of calibration data, default is 10
         calibration_data_min_length: int = 10,
         calibration_concat_separator: Optional[str] = None,
@@ -1163,18 +1165,35 @@ class BaseQModel(nn.Module):
 
         processors = quantize_processor
         if needs_lora:
-            processors.append(
-                EoraProcessor(
-                    tokenizer=self.tokenizer,
-                    qcfg=self.quantize_config,
-                    calibration=adapter_calibration_dataset if adapter_calibration_dataset is not None else calibration,
-                    prepare_dataset_func=self.prepare_dataset,
-                    calibration_concat_size=calibration_concat_size,
-                    calibration_sort=calibration_sort,
-                    calibration_concat_separator=calibration_concat_separator,
-                    batch_size=batch_size,
+            if isinstance(adapter_calibration_dataset, dict):
+                # per-language calibration: build one correction adapter per language
+                from ..looper.language_eora_processor import LanguageEoraProcessor
+
+                processors.append(
+                    LanguageEoraProcessor(
+                        tokenizer=self.tokenizer,
+                        qcfg=self.quantize_config,
+                        calibration=adapter_calibration_dataset,
+                        prepare_dataset_func=self.prepare_dataset,
+                        calibration_concat_size=calibration_concat_size,
+                        calibration_sort=calibration_sort,
+                        calibration_concat_separator=calibration_concat_separator,
+                        batch_size=batch_size,
+                    )
                 )
-            )
+            else:
+                processors.append(
+                    EoraProcessor(
+                        tokenizer=self.tokenizer,
+                        qcfg=self.quantize_config,
+                        calibration=adapter_calibration_dataset if adapter_calibration_dataset is not None else calibration,
+                        prepare_dataset_func=self.prepare_dataset,
+                        calibration_concat_size=calibration_concat_size,
+                        calibration_sort=calibration_sort,
+                        calibration_concat_separator=calibration_concat_separator,
+                        batch_size=batch_size,
+                    )
+                )
 
         module_looper = ModuleLooper(self, processors=processors)
 
