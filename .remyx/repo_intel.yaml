@@ -1,0 +1,18 @@
+schema_version: 1
+fork: salma-remyx/GPTQModel
+observed_landing_zones:
+- path: gptqmodel/quantization/
+  shape_tags:
+  - unclassified
+  confirmed_by:
+  - arxiv: 2608.07019v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "GPTQ.quantize() in gptqmodel/quantization/gptq.py \u2014\
+      \ the refinement runs inside the per-layer quantization loop (line ~1271), directly\
+      \ on the loop's W/H/Q state, gated by the new qcfg.grid_refine optio"
+    branch: requant-fixed-grid-discrete-refinement-for-post-training-qua
+    timestamp: '2026-08-14T23:10:56Z'
+  last_observed: '2026-08-14T23:10:56Z'
+rejected_shapes: []
+coordination_signals: []
+last_updated: '2026-08-14T23:10:56Z'
