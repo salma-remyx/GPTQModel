@@ -2950,6 +2950,7 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
             "mse": "mse",
             "mock_quantization": "mock_quantization",
             "act_group_aware": "act_group_aware",
+            "dynamic_groups": "dynamic_groups",
             "true_sequential": "true_sequential",
             "damp_percent": "damp_percent",
             "damp_auto_increment": "damp_auto_increment",
@@ -3203,6 +3204,10 @@ class GPTQConfig(PreProcessorConfig):
     damp_percent: Optional[float] = field(default=None)
     damp_auto_increment: Optional[float] = field(default=None)
     act_group_aware: Optional[bool] = field(default=None)
+    dynamic_groups: bool = field(
+        default=False,
+        metadata={"help": "Group columns by quantization similarity instead of index-contiguous blocks."},
+    )
     static_groups: bool = field(default=False)
     mse: float = field(default=0.0)
     gptaq: Optional[GPTAQConfig] = field(default=None)
@@ -3248,6 +3253,17 @@ class GPTQConfig(PreProcessorConfig):
         self._resolve_activation_ordering(desc_act_user_value, act_group_aware_user_value)
         if self.act_group_aware and self.desc_act:
             raise ValueError("QuantizeConfig:: `act_group_aware` == `True` requires `desc_act` == `False`.")
+
+        if self.dynamic_groups:
+            if self.act_group_aware:
+                self.act_group_aware = False
+                log.info(
+                    "QuantizeConfig: `dynamic_groups=True` supersedes `act_group_aware`; both reorder columns, using dynamic grouping."
+                )
+            if self.desc_act:
+                raise ValueError("QuantizeConfig:: `dynamic_groups=True` requires `desc_act` == `False`.")
+            if self.static_groups:
+                raise ValueError("QuantizeConfig:: `dynamic_groups=True` is incompatible with `static_groups`.")
 
     def _resolve_activation_ordering(
         self,

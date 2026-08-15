@@ -25,6 +25,7 @@ from ..utils.env import env_flag
 from ..utils.logger import setup_logger
 from ..utils.torch import torch_sync
 from .fallback_smooth import mse_optimal_quant, smooth_block
+from .dynamic_grouping import build_dynamic_group_perm
 from .gar import (
     compose_final_perm,
     compute_global_perm,
@@ -283,6 +284,16 @@ class GPTQ:
             raise ValueError(
                 f"Quantization: Module `{self.name}` -> `act_group_aware=True` requires `group_size > 0`, "
                 f"got `{group_size}`."
+            )
+
+        if not getattr(self.qcfg, "dynamic_groups", False):
+            return
+
+        dynamic_group_size = int(getattr(self.qcfg, "group_size", -1) or -1)
+        if dynamic_group_size <= 0:
+            raise ValueError(
+                f"Quantization: Module `{self.name}` -> `dynamic_groups=True` requires `group_size > 0`, "
+                f"got `{dynamic_group_size}`."
             )
 
     @staticmethod
@@ -1051,6 +1062,29 @@ class GPTQ:
                 self.quantizer.find_params(W, weight=True)
             invperm = torch.argsort(perm)
 
+        elif self.qcfg.dynamic_groups and self.qcfg.group_size > 0:
+            # DynaQ-style grouping: reorder columns by quantization similarity so
+            # each contiguous group shares a well-matched scale/zero, instead of
+            # grouping index-adjacent columns. Requires `desc_act=False`, which is
+            # enforced in `GPTQConfig.__post_init__`.
+            dg_perm = build_dynamic_group_perm(W, self.qcfg.group_size, self.qcfg.bits)
+            try:
+                W = W[:, dg_perm]
+                if use_hessian:
+                    self.H = self.H[dg_perm][:, dg_perm]
+            except RuntimeError as exc:
+                if self.H.device.type != "cuda" or "out of memory" not in str(exc).lower():
+                    raise
+
+                self.log_cpu_fallback("dynamic-group permutation", self.H.device)
+                cpu_fallback_used = True
+                cpu_device = torch.device("cpu")
+                dg_perm = dg_perm.to(device=cpu_device)
+                W = W.to(device=cpu_device)[:, dg_perm]
+                if use_hessian:
+                    self.H = self.H.to(device=cpu_device)[dg_perm][:, dg_perm]
+                self.quantizer.find_params(W, weight=True)
+
         elif self.qcfg.act_group_aware and use_hessian:
             diag_h = torch.diag(self.H)
             local_perms, local_values = compute_local_perms(
@@ -1300,6 +1334,13 @@ class GPTQ:
             Q = Q[:, invperm]
             g_idx = g_idx[invperm]
             del perm, invperm
+
+        elif self.qcfg.dynamic_groups and self.qcfg.group_size > 0:
+            # Restore original column order; g_idx stays ascending, matching how
+            # the torch kernel consumes per-column group indices.
+            inv_dg = invert_perm(dg_perm).to(device=Q.device)
+            Q = Q[:, inv_dg]
+            del dg_perm, inv_dg
 
         elif self.qcfg.act_group_aware and use_hessian:
             inv_final = invert_perm(final_perm).to(device=Q.device)

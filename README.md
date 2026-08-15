@@ -633,6 +633,17 @@ quant_config = QuantizeConfig(bits=4, group_size=128, act_group_aware=True)
 ```
 
 
+### Dynamic Grouping (DynaQ)
+
+Dynamic grouping (adapted from the [DynaQ](https://arxiv.org/abs/2509.03054) binary-quantization paper) forms groups from quantization-similar columns instead of index-adjacent ones. Columns are ordered most-quantization-sensitive-first and contiguous groups are cut from the reordered layout, so the shared `scale`/`zero` each group must use is far less mismatched. The original column order is restored after quantization (`g_idx` stays ascending), so there is no inference-time overhead and no kernel change. Most useful at low bitwidths.
+
+Set the `dynamic_groups` parameter to `True` with `desc_act` disabled in your `QuantizeConfig`. For example:
+
+```python
+quant_config = QuantizeConfig(bits=2, group_size=128, dynamic_groups=True)
+```
+
+
 ### Experimental Features
 
 #### Using GPTAQ (Experimental, not MoE compatible, and results may not be better than original)
