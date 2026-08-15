@@ -3,7 +3,7 @@ fork: salma-remyx/GPTQModel
 observed_landing_zones:
 - path: gptqmodel/quantization/
   shape_tags:
-  - unclassified
+  - library-shape-public-api
   confirmed_by:
   - arxiv: 2608.07019v1
     mode: Mode 2 (adapted port)
@@ -12,7 +12,14 @@ observed_landing_zones:
       \ on the loop's W/H/Q state, gated by the new qcfg.grid_refine optio"
     branch: requant-fixed-grid-discrete-refinement-for-post-training-qua
     timestamp: '2026-08-14T23:10:56Z'
-  last_observed: '2026-08-14T23:10:56Z'
+  - arxiv: 2509.03054v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: '`GPTQ.quantize()` in gptqmodel/quantization/gptq.py (instantiated
+      per-layer by the production looper at gptqmodel/looper/gptq_processor.py:175),
+      gated on the new `dynamic_groups` flag in `QuantizeConf'
+    branch: binary-quantization-for-llms-through-dynamic-grouping
+    timestamp: '2026-08-15T05:37:33Z'
+  last_observed: '2026-08-15T05:37:33Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-14T23:10:56Z'
+last_updated: '2026-08-15T05:37:33Z'
