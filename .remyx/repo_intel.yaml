@@ -20,6 +20,18 @@ observed_landing_zones:
     branch: binary-quantization-for-llms-through-dynamic-grouping
     timestamp: '2026-08-15T05:37:33Z'
   last_observed: '2026-08-15T05:37:33Z'
+- path: gptqmodel/adapter/
+  shape_tags:
+  - library-shape-public-api
+  confirmed_by:
+  - arxiv: 2310.08659v4
+    mode: Mode 2 (adapted port)
+    call_site_specifics: gptqmodel/models/base.py:_eora_generate (the pre-existing
+      adapter-generation path), reached from the public GPTQModel.adapter.generate
+      entry point in gptqmodel/models/auto.py:809
+    branch: loftq-lora-fine-tuning-aware-quantization-for-large-language
+    timestamp: '2026-08-15T11:35:21Z'
+  last_observed: '2026-08-15T11:35:21Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-15T05:37:33Z'
+last_updated: '2026-08-15T11:35:21Z'
