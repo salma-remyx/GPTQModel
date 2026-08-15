@@ -118,13 +118,18 @@ class Adapter():
 class Lora(Adapter):
     """LoRA adapter implementation backed by A/B projection matrices."""
 
-    def __init__(self, rank: int, path: str = None, lora_A: torch.Tensor = None, lora_B: torch.Tensor = None):
+    def __init__(self, rank: int, path: str = None, lora_A: torch.Tensor = None, lora_B: torch.Tensor = None,
+                 init: str = None, num_iters: int = None):
         """Initializes the adapter with optional preloaded LoRA matrices."""
 
         super().__init__(rank, path)
 
         self.lora_A = lora_A
         self.lora_B = lora_B
+        # `init` selects the adapter generation scheme: None keeps the EoRA
+        # eigenspace path, 'loftq' selects LoRA-Fine-Tuning-Aware init.
+        self.init = init
+        self.num_iters = num_iters
 
     @classmethod
     def name(cls) -> str:

@@ -562,6 +562,33 @@ print(f"Result: {result}")
 # Please use the benchmark tools in later part of this README to evaluate EoRA effectiveness
 ```
 
+### LoftQ Initialization: LoRA-Fine-Tuning-Aware Adapter Generation — adapted from LoftQ (arXiv 2310.08659)
+
+`Lora(init="loftq")` generates the adapter with LoftQ's alternating SVD initialization instead of EoRA's
+eigenspace fit, producing LoRA A/B matrices that compensate the quantization residual before fine-tuning.
+```py
+loftq = Lora(
+  path=f"{quant_path}/loftq_rank32",
+  rank=32,
+  init="loftq",
+  num_iters=4,  # alternating SVD iterations, paper default
+)
+
+GPTQModel.adapter.generate(
+  adapter=loftq,
+  model_id_or_path=model_id,
+  quantized_model_id_or_path=quant_path,
+  calibration_dataset=calibration_dataset,
+  calibration_dataset_concat_size=0,
+)
+
+# post-loftq inference
+model = GPTQModel.load(
+  model_id_or_path=quant_path,
+  adapter=loftq
+)
+```
+
 ### How to Add Support for a New Model
 
 Read the [`gptqmodel/models/llama.py`](https://github.com/ModelCloud/GPTQModel/blob/5627f5ffeb3f19b1a2a97e3b6de6fbe668b0dc42/gptqmodel/models/llama.py) code which explains in detail via comments how the model support is defined. Use it as a guide for PRs to add new models. Most models follow the same pattern.

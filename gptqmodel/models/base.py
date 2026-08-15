@@ -1292,21 +1292,42 @@ class BaseQModel(nn.Module):
                     batch_size=batch_size,
                 ),
             )
+
+        adapter_processor = EoraProcessor(
+            tokenizer=self.tokenizer,
+            qcfg=self.quantize_config,
+            calibration=calibration_dataset,
+            prepare_dataset_func=self.prepare_dataset,
+            calibration_concat_size=calibration_dataset_concat_size,
+            calibration_sort=calibration_dataset_sort,
+            calibration_concat_separator=calibration_concat_separator,
+            batch_size=batch_size,
+        )
+
+        # LoftQ initialization swaps the eigenspace adapter for the alternating
+        # SVD one while keeping the same dequantize -> adapter lifecycle.
+        if getattr(adapter, "init", None) == "loftq":
+            from ..looper.loftq_processor import LoftqProcessor
+
+            adapter_processor = LoftqProcessor(
+                tokenizer=self.tokenizer,
+                qcfg=self.quantize_config,
+                calibration=calibration_dataset,
+                prepare_dataset_func=self.prepare_dataset,
+                calibration_concat_size=calibration_dataset_concat_size,
+                calibration_sort=calibration_dataset_sort,
+                calibration_concat_separator=calibration_concat_separator,
+                batch_size=batch_size,
+                num_iters=int(getattr(adapter, "num_iters", 4) or 4),
+            )
+            log.info("Model: Using LoftQ adapter initialization")
+
         processors.extend(
             [
                 DequantizeProcessor(
                     quantized_modules=quantized_modules,
                 ),
-                EoraProcessor(
-                    tokenizer=self.tokenizer,
-                    qcfg=self.quantize_config,
-                    calibration=calibration_dataset,
-                    prepare_dataset_func=self.prepare_dataset,
-                    calibration_concat_size=calibration_dataset_concat_size,
-                    calibration_sort=calibration_dataset_sort,
-                    calibration_concat_separator=calibration_concat_separator,
-                    batch_size=batch_size,
-                ),
+                adapter_processor,
             ]
         )
 
