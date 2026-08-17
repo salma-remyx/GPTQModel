@@ -83,6 +83,10 @@ class TritonV2Linear(TorchLinear):
     Calls dequant kernel (see triton_utils/dequant) to dequantize the weights then uses
     torch.matmul to compute the output whereas original `triton` quantized linear layer fused
     dequant and matmul into single kernel.add()
+
+    With GPTQMODEL_TRITON_FUSED_SPLITK=1 the eval forward instead uses the fused
+    dequant+matmul kernel in triton_utils/fused_splitk, which restores that fused
+    behavior and splits K across programs for skinny matmuls.
     """
 
     def __init__(
@@ -173,6 +177,41 @@ class TritonV2Linear(TorchLinear):
             self.g_idx, self.scales, layer_name=type(self).__name__
         )
 
+    def _fused_splitk_matmul(self, x) -> Optional[torch.Tensor]:
+        """Fused dequant+GEMM (SplitK) return value, or ``None`` to fall back.
+
+        Requires GPTQMODEL_TRITON_FUSED_SPLITK=1 plus the layout the fused
+        kernel decodes: 2/4/8-bit CUDA buffers with no adapter, where the
+        pack layout is a whole number of words in both K and N.
+        """
+        from ..triton_utils.fused_splitk import FUSED_SPLITK_ENABLED, SUPPORTED_BITS, fused_dequant_matmul
+
+        if not FUSED_SPLITK_ENABLED or self.adapter is not None:
+            return None
+        if self.bits not in SUPPORTED_BITS or self.planar:
+            return None
+        if x.dim() != 2 or x.shape[-1] != self.in_features:
+            return None
+        for buf in (self.qweight, self.qzeros, self.scales, self.g_idx):
+            if buf is None or buf.device.type != "cuda":
+                return None
+        if self.g_idx.device != self.qweight.device or self.g_idx.numel() != self.in_features:
+            return None
+        pack_scale = self.pack_dtype_bits // self.bits
+        if self.in_features % pack_scale or self.out_features % pack_scale:
+            return None
+
+        return fused_dequant_matmul(
+            x,
+            self.qweight,
+            self.scales,
+            self.qzeros,
+            self.g_idx,
+            self.bits,
+            self.pack_dtype_bits,
+            self.maxq,
+        )
+
     def forward(self, x):
         from ..triton_utils.dequant import QuantLinearFunction
 
@@ -187,16 +226,22 @@ class TritonV2Linear(TorchLinear):
 
         out_shape = x.shape[:-1] + (self.out_features,)
 
-        out = QuantLinearFunction.apply(
-            x.reshape(-1, x.shape[-1]),
-            self.qweight,
-            self.scales,
-            self.qzeros,
-            self.g_idx,
-            self.bits,
-            self.pack_dtype_bits,
-            self.maxq,
-        ).reshape(out_shape)
+        # Opt-in fused dequant+matmul (SplitK) for skinny W4A16 matmuls; the
+        # default two-kernel dequant -> torch.matmul path is unchanged.
+        out = self._fused_splitk_matmul(x.reshape(-1, x.shape[-1]))
+        if out is None:
+            out = QuantLinearFunction.apply(
+                x.reshape(-1, x.shape[-1]),
+                self.qweight,
+                self.scales,
+                self.qzeros,
+                self.g_idx,
+                self.bits,
+                self.pack_dtype_bits,
+                self.maxq,
+            )
+
+        out = out.reshape(out_shape)
 
         if self.bias is not None:
             out.add_(self.bias)

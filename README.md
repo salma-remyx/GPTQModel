@@ -363,6 +363,20 @@ Notes:
 * It mainly affects some fused AWQ and ParoQuant CUDA/Triton kernels. Dense/dequantize fallback paths are mostly unaffected.
 * `1` is recommended for regression testing and quality-sensitive evaluation. `0` may be useful when chasing a small latency win and the quality tradeoff is acceptable.
 
+### Fused dequant + matmul (SplitK) for the Triton backend
+
+`BACKEND.GPTQ_TRITON` (`TritonV2Linear`) normally dequantizes the whole weight with one Triton kernel and then calls `torch.matmul`. An opt-in path fuses the two into a single kernel and splits the K reduction across programs (SplitK work decomposition), which targets the skinny `m x @ W` shapes that dominate decode, where too few output tiles exist to fill the device.
+
+```shell
+# opt in to the fused kernel for 2/4/8-bit CUDA inference with no adapter
+export GPTQMODEL_TRITON_FUSED_SPLITK=1
+```
+
+Notes:
+* Off by default; the two-kernel dequant + matmul path is unchanged otherwise.
+* Applies to 2/4/8-bit CUDA layers whose pack layout divides evenly; 3-bit, planar (`gptq_p`), adapter-attached, and training forwards keep the existing path.
+* Accumulates in fp32 and reduces the split partials with atomics, so the split reduction adds no rounding beyond the usual quantization error.
+
 ### OpenAI API compatible endpoint
 ```py
 # load model using above inference guide first
