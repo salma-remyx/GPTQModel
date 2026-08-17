@@ -32,6 +32,18 @@ observed_landing_zones:
     branch: loftq-lora-fine-tuning-aware-quantization-for-large-language
     timestamp: '2026-08-15T11:35:21Z'
   last_observed: '2026-08-15T11:35:21Z'
+- path: gptqmodel/nn_modules/qlinear/
+  shape_tags:
+  - library-shape-public-api
+  confirmed_by:
+  - arxiv: 2402.00025v2
+    mode: Mode 2 (adapted port)
+    call_site_specifics: "TritonV2Linear.forward in gptqmodel/nn_modules/qlinear/tritonv2.py\
+      \ \u2014 the qlinear layer dispatched for BACKEND.GPTQ_TRITON from the existing\
+      \ model loading path (gptqmodel/models/base.py:1008, gptqmodel"
+    branch: accelerating-a-triton-fused-kernel-for-w4a16-quantized-infer
+    timestamp: '2026-08-17T12:31:40Z'
+  last_observed: '2026-08-17T12:31:40Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-15T11:35:21Z'
+last_updated: '2026-08-17T12:31:40Z'
