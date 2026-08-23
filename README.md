@@ -668,6 +668,7 @@ Models quantized by GPT-QModel are inference compatible with HF Transformers (mi
 * AWQ: main-authors: Lin, Ji and Tang, Jiaming and Tang, Haotian and Yang, Shang and Dang, Xingyu and Han, Song
 * ParoQuant: Z-Lab, main-authors: Yesheng Liang, Haisheng Chen, Song Han, and Zhijian Liu. [Official implementation](https://github.com/z-lab/paroquant), [Paper](https://openreview.net/forum?id=1USeVjsKau)
 * EoRA: Nvidia, main-author: Shih-Yang Liu, arXiv preprint arXiv:2410.21271.
+* QuaSAR truncated solver (EoRA compensation stability): activation-aware rank truncation replacing the negative-eigenvalue clamp in the EoRA closed-form solve. arXiv preprint arXiv:2608.14149.
 * GAR: Intel, main-author: T Gafni, A Karnieli, Y Hanani, [Paper](https://openaccess.thecvf.com/content/CVPR2025W/eLVM/html/Gafni_Dual_Precision_Quantization_for_Efficient_and_Accurate_Deep_Neural_Networks_CVPRW_2025_paper.html)
 * GPTAQ: Yale Intelligent Computing Lab, main-author: Yuhang Li, arXiv:2504.02692.
 * Fast Hadamard Transform: [Dao-AILab/fast-hadamard-transform](https://github.com/Dao-AILab/fast-hadamard-transform), by Tri Dao, vendored into `gptqmodel_ext/hadamard/` under the BSD-3-Clause license. A copy of the license is included in `gptqmodel_ext/hadamard/LICENSE`.
@@ -731,6 +732,13 @@ Models quantized by GPT-QModel are inference compatible with HF Transformers (mi
   author={Liu, Shih-Yang and Yang, Huck and Wang, Chien-Yi and Fung, Nai Chit and Yin, Hongxu and Sakr, Charbel and Muralidharan, Saurav and Cheng, Kwang-Ting and Kautz, Jan and Wang, Yu-Chiang Frank and others},
   journal={arXiv preprint arXiv:2410.21271},
   year={2024}
+}
+
+# QuaSAR
+@article{quasar2026truncated,
+  title={QuaSAR: Quantization Compensation via Stable Activation-Aware Rank Truncation},
+  journal={arXiv preprint arXiv:2608.14149},
+  year={2026}
 }
 
 # GPTAQ

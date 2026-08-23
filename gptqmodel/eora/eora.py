@@ -21,6 +21,7 @@ from torch import Tensor
 from ..utils.logger import setup_logger
 from ..utils.rocm import IS_ROCM
 from ..utils.torch import TORCH_GTE_210
+from .truncated_solver import truncated_solve_lowrank
 
 log = setup_logger()
 
@@ -97,39 +98,22 @@ def eora_compute_lora(
         original_backend = torch.backends.cuda.preferred_linalg_library()
         torch.backends.cuda.preferred_linalg_library(backend="magma")
 
-    L, Q = torch.linalg.eigh(raw_scaling_diag_matrix)
+    # QuaSAR-style truncated pseudoinverse: rank-deficient activation Gram
+    # matrices would otherwise make the closed-form solve unstable, producing
+    # spuriously useless compensation for layers that are still recoverable.
+    # Collapsed eigen-directions are dropped before inversion instead of being
+    # clamped up to the smallest surviving eigenvalue.
+    A, B = truncated_solve_lowrank(
+        residual=w_wq_delta,
+        gram_matrix=raw_scaling_diag_matrix,
+        rank=rank,
+        name=name,
+    )
 
-    if (L < 0).any():
-        ## When expanding the calibration data size for EoRA, I suggest maintaining the balance by allocating 50% to general input (C4) and the remaining 50% to downstream task data.
-        log.warn(f"Found negative eigenvalues in `{name}`. Please increase your calibration data set for EoRA.")
-        minimum = torch.min(L[L > 0])
-        L[L < 0] = minimum
+    B = B.to(dtype=dtype) # default to float16, check if we should save to float32
+    A = A.to(dtype=dtype) # default to float16, check if we should save to float32
 
-    sqrtEigenvalues = torch.sqrt(L)
-    scaling_diag_matrix = Q @ torch.diag(sqrtEigenvalues)
-
-    scaling_matrix_inv = torch.diag(1/sqrtEigenvalues) @ Q.T
-
-    scaling_diag_matrix = scaling_diag_matrix.to(dtype=torch.float32)
-    scaling_matrix_inv = scaling_matrix_inv.to(dtype=torch.float32)
-
-    delta_scale = torch.matmul(w_wq_delta, scaling_diag_matrix)
-
-    U, S, V = torch.linalg.svd(delta_scale, full_matrices=False)
-    lowrank_r = rank
-    truc_s = S[:lowrank_r]
-    truc_u = U[:, :lowrank_r]
-    truc_v = torch.matmul(V[:lowrank_r, :], scaling_matrix_inv)
-    truc_sigma = torch.diag(truc_s)
-
-    sqrtS = torch.sqrt(truc_sigma)
-    B = torch.matmul(truc_u, sqrtS).to(dtype=dtype) # default to float16, check if we should save to float32
-    A = torch.matmul(sqrtS, truc_v).to(dtype=dtype) # default to float16, check if we should save to float32
-
-
-    del L, Q, U, S, V,
-    del w_wq_delta, raw_scaling_diag_matrix, sqrtEigenvalues, scaling_diag_matrix, scaling_matrix_inv, delta_scale
-    del truc_s, truc_u, truc_v, truc_sigma, sqrtS
+    del w_wq_delta, raw_scaling_diag_matrix
 
     # revert linalg backend
     if IS_ROCM and not TORCH_GTE_210:
