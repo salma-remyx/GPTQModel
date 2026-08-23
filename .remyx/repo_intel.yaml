@@ -44,6 +44,18 @@ observed_landing_zones:
     branch: accelerating-a-triton-fused-kernel-for-w4a16-quantized-infer
     timestamp: '2026-08-17T12:31:40Z'
   last_observed: '2026-08-17T12:31:40Z'
+- path: gptqmodel/eora/
+  shape_tags:
+  - library-shape-public-api
+  confirmed_by:
+  - arxiv: 2608.14149v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: eora_compute_lora in gptqmodel/eora/eora.py, which EoraProcessor
+      calls at gptqmodel/looper/eora_processor.py:276; that processor runs from the
+      model's _eora_generate entry point (gptqmodel/models/base
+    branch: quasar-quantization-compensation-via-stable-activation-aware
+    timestamp: '2026-08-23T16:15:10Z'
+  last_observed: '2026-08-23T16:15:10Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-17T12:31:40Z'
+last_updated: '2026-08-23T16:15:10Z'
