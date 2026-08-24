@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import torch
 
 from .attn_mask import normalize_seq_mask
+from .calibration_doubt import parse_doubt_mode, select_doubt_calibration
 from .data import collate_data
 from .logger import setup_logger
 
@@ -529,7 +530,16 @@ def prepare_calibration_dataset(
 
         new_calibration_dataset = concatenated_data
 
-    if calibration_dataset_sort == "asc":
+    doubt_mode = parse_doubt_mode(calibration_dataset_sort)
+
+    if doubt_mode is not None:
+        sorted_dataset = select_doubt_calibration(
+            getattr(qmodel, "model", None),
+            new_calibration_dataset,
+            doubt_mode,
+            logger=log,
+        )
+    elif calibration_dataset_sort == "asc":
         log.info("Calibration: Sort in ascending order by length")
         sorted_dataset = sorted(
             new_calibration_dataset,

@@ -401,6 +401,19 @@ model.save(quant_path)
 
 `GPTQ`, `AWQ`, `ParoQuant`, and `EXL3` are calibration-based. `GGUF` and `FP8` are weight-only and should be quantized with `calibration=None`.
 
+##### Target-Aware Calibration Selection (Uncertainty Preserving)
+
+`calibration_sort` accepts a `doubt` mode that selects calibration rows by the full-precision model's own predictive uncertainty, instead of by length. Adapted from [Target-Aware Calibration Data Selection for Preserving Uncertainty in Quantized Language Models](https://arxiv.org/abs/2608.21019) (DPQ): every row is scored before quantization, then the calibration set becomes a mixture of the highest-doubt rows plus generic anchors kept in native order, so the calibration distribution does not drift onto only the hard examples.
+
+```py
+# `doubt[:signal[:ratio]]` -- signal is `entropy` (default) or `confidence`;
+# ratio is the fraction of high-doubt rows (0.75 = the paper's DPQ-r75).
+model.quantize(calibration_dataset, calibration_sort="doubt")
+model.quantize(calibration_dataset, calibration_sort="doubt:confidence:r50")
+```
+
+Existing `calibration_sort` values (`asc`, `desc`, `shuffle`) are unchanged. Selection runs the un-quantized model over the calibration rows once, so it costs one extra forward pass per row before quantization begins.
+
 ##### Preprocessors
 
 `preprocessors=[...]` adds optional module-weight preparation steps before quantization or repacking. They are available on `GPTQConfig`, `AWQConfig`, `ParoConfig`, `RTNConfig`, `GGUFConfig`, `FP8Config`, and `BitsAndBytesConfig`.
@@ -674,6 +687,7 @@ Models quantized by GPT-QModel are inference compatible with HF Transformers (mi
 * Swordfish Kernel: Blackwell (`>= sm100`) GPTQ/AWQ kernel from [AlpinDale](https://x.com/AlpinDale). [Paper](https://blog.alpindale.net/posts/swordfish/)
 * QQQ: Meituan, main-author Ying Zhang, arXiv:2406.09904
 * FOEM: Zheng, Xingyu and Qin, Haotong and Li, Yuye and Chu, Haoran and Wang, Jiakai and Guo, Jinyang and Magno, Michele and Liu, Xianglong [Paper](https://ojs.aaai.org/index.php/AAAI/article/view/40123)
+* Doubt-Preserving Calibration Selection: arXiv:2608.21019, target-aware calibration-data selection preserving full-precision uncertainty. [Paper](https://arxiv.org/abs/2608.21019)
 
 ## Citations:
 
