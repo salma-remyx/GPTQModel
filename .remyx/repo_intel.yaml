@@ -63,6 +63,18 @@ observed_landing_zones:
     branch: quasar-quantization-compensation-via-stable-activation-aware
     timestamp: '2026-08-23T16:15:10Z'
   last_observed: '2026-08-23T16:15:10Z'
+- path: gptqmodel/utils/
+  shape_tags:
+  - unclassified
+  confirmed_by:
+  - arxiv: 2608.21019v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: '`BaseQModel.quantize(calibration_sort=''doubt...'')` ->
+      `prepare_dataset` (gptqmodel/models/base.py:790) -> `prepare_calibration_dataset`
+      (gptqmodel/utils/calibration.py:533-541), which is the `prepare_'
+    branch: target-aware-calibration-data-selection-for-preserving-uncer
+    timestamp: '2026-08-24T22:28:19Z'
+  last_observed: '2026-08-24T22:28:19Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-24T12:03:44Z'
+last_updated: '2026-08-24T22:28:19Z'
