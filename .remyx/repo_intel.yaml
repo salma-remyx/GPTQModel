@@ -19,7 +19,14 @@ observed_landing_zones:
       gated on the new `dynamic_groups` flag in `QuantizeConf'
     branch: binary-quantization-for-llms-through-dynamic-grouping
     timestamp: '2026-08-15T05:37:33Z'
-  last_observed: '2026-08-15T05:37:33Z'
+  - arxiv: 2608.12026v1
+    mode: Mode 2 (adapted port)
+    call_site_specifics: GPTQModel.load(model_id, GPTQConfig(lm_head=True, lm_head_rate=HeadRateConfig(budget=...)))
+      -> model.quantize(...) -> GPTQ.add_batch accumulates the statistic (gptq.py:374)
+      and GPTQ.quantize calls app
+    branch: softwater-class-aware-rate-allocation-for-softmax-quantizati
+    timestamp: '2026-08-24T12:03:44Z'
+  last_observed: '2026-08-24T12:03:44Z'
 - path: gptqmodel/adapter/
   shape_tags:
   - library-shape-public-api
@@ -58,4 +65,4 @@ observed_landing_zones:
   last_observed: '2026-08-23T16:15:10Z'
 rejected_shapes: []
 coordination_signals: []
-last_updated: '2026-08-23T16:15:10Z'
+last_updated: '2026-08-24T12:03:44Z'
