@@ -32,6 +32,11 @@ from .gar import (
     extend_perm_with_tail,
     invert_perm,
 )
+from .head_rate import (
+    build_class_aware_quantizer,
+    class_side_statistic,
+    head_rate_summary,
+)
 from .npu_linalg import npu_inverse_cholesky_factor
 from .quantizer import HF_OPTIMUM, Quantizer
 
@@ -254,6 +259,12 @@ class GPTQ:
         self._device_sample_counts: Dict[torch.device, int] = {}
         self._hessian_dirty: bool = False
 
+        # Class-aware rate allocation (SoftWater-style, lm_head only): the
+        # class-side statistic is accumulated from the same calibration forward
+        # pass that builds the Hessian, at no extra cost.
+        self._head_rate_config = getattr(self.qcfg, "lm_head_rate", None)
+        self._class_statistic: Optional[torch.Tensor] = None
+
         self._borrow_workspace_stats = {
             "requests": 0,
             "staging_requests": 0,
@@ -360,6 +371,8 @@ class GPTQ:
 
         dev = torch.device(device)
 
+        self._accumulate_class_statistic(out)
+
         with self.lock:
             self.fwd_counter += 1
 
@@ -373,6 +386,87 @@ class GPTQ:
             self._device_sample_counts[dev] = self._device_sample_counts.get(dev, 0) + batch_token_size
             self.nsamples += batch_token_size
             self._hessian_dirty = True
+
+    def _accumulate_class_statistic(self, out: torch.Tensor) -> None:
+        """Fold one batch of module outputs into the class-side statistic.
+
+        Only meaningful for the softmax head, where ``out`` holds teacher
+        logits over the vocabulary. Activation statistics are accumulated in
+        fp32 on CPU so a 100k+ class vocabulary does not pin VRAM for the whole
+        calibration run.
+        """
+
+        if self._head_rate_config is None or not torch.is_tensor(out):
+            return
+
+        try:
+            statistic = class_side_statistic(
+                out,
+                temperature=self._head_rate_config.temperature,
+            ).to(device="cpu")
+        except RuntimeError as exc:
+            if "out of memory" not in str(exc).lower():
+                raise
+            log.warn(
+                "Quantization: Module `%s` -> skipped class-rate statistic on OOM.",
+                self.name,
+            )
+            self._head_rate_config = None
+            return
+
+        if self._class_statistic is None:
+            self._class_statistic = statistic
+        elif self._class_statistic.numel() == statistic.numel():
+            self._class_statistic += statistic
+        else:
+            # Output shape drifted mid-calibration; the statistic is unusable.
+            log.warn(
+                "Quantization: Module `%s` -> class-rate statistic shape mismatch; disabling.",
+                self.name,
+            )
+            self._head_rate_config = None
+            self._class_statistic = None
+
+    def apply_class_rate_allocation(self) -> None:
+        """Swap in a class-aware quantizer when the class statistic is usable.
+
+        Called once per module, right before the scale search. No-op (and the
+        base quantizer is kept) when no statistic was collected or it does not
+        line up with the module's output rows.
+        """
+
+        if self._head_rate_config is None or self._class_statistic is None:
+            return
+
+        replacement = build_class_aware_quantizer(
+            self.quantizer,
+            class_statistic=self._class_statistic,
+            output_rows=self.rows,
+            budget=self._head_rate_config.budget,
+        )
+        if replacement is None:
+            log.warn(
+                "Quantization: Module `%s` -> class-rate statistic does not match output rows `%s`; using base grid.",
+                self.name,
+                self.rows,
+            )
+            return
+
+        self.quantizer = replacement
+        summary = head_rate_summary(
+            self._class_statistic,
+            replacement.class_multipliers,
+        )
+        log.info(
+            "Quantization: Module `%s` -> class-aware rate allocation on %s classes "
+            "(top-50%%-mass classes: %s, multiplier range: %.3f-%.3f).",
+            self.name,
+            int(summary.get("classes", 0)),
+            summary.get("mass_top50pct_classes"),
+            summary.get("multiplier_min", 0.0),
+            summary.get("multiplier_max", 0.0),
+        )
+        self._class_statistic = None
 
     def preferred_staging_dtype(self, input_dtype: torch.dtype, device: torch.device) -> torch.dtype:
         device = torch.device(device)
@@ -1007,6 +1101,9 @@ class GPTQ:
             W = self.module_copy.to(device=self.H.device)
             del self.module_copy
 
+        # Class-aware rate allocation swaps the base quantizer for one whose
+        # per-row grid follows the output-KL sensitivity of each class.
+        self.apply_class_rate_allocation()
         self.quantizer.find_params(W, weight=True)
 
         # H = self.H.to(device=self.H.device)

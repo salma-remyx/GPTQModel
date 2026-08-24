@@ -1228,6 +1228,34 @@ class HessianConfig:
 
 
 @dataclass
+class HeadRateConfig:
+    """Class-aware rate allocation for the softmax head (`lm_head`).
+
+    Adapted from SoftWater (arXiv:2608.12026): quantify per-class output-KL
+    sensitivity from calibration logits and spend quantization rate where it
+    reduces KL the most, instead of giving every vocabulary row the same grid.
+    """
+
+    # target mean of the per-class scale multipliers; 1.0 keeps the average
+    # step size of the base grid while redistributing it across classes.
+    budget: float = field(default=1.0)
+
+    # softmax temperature used when deriving the class-side curvature.
+    temperature: float = field(default=1.0)
+
+    def __post_init__(self):
+        """Validate the rate-allocation controls."""
+
+        if not isinstance(self.budget, (int, float)) or self.budget <= 0:
+            raise ValueError("HeadRateConfig: `budget` must be a positive number.")
+        self.budget = float(self.budget)
+
+        if not isinstance(self.temperature, (int, float)) or self.temperature <= 0:
+            raise ValueError("HeadRateConfig: `temperature` must be a positive number.")
+        self.temperature = float(self.temperature)
+
+
+@dataclass
 class GPTAQConfig:
     alpha: float = field(default=0.25)
     device: Union[str, torch.device] = field(default="auto")
@@ -2145,6 +2173,20 @@ def _resolve_dynamic_group_size_error() -> str:
     return "QuantizeConfig: `group_size` must be one of `[-1, 16, 32, 64, 128, 256, 512, 1024]`."
 
 
+def _normalize_head_rate(value: Optional[Union[HeadRateConfig, Dict[str, Any]]]) -> Optional[HeadRateConfig]:
+    if value is None:
+        return None
+    if isinstance(value, HeadRateConfig):
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("QuantizeConfig: `lm_head_rate` must be a HeadRateConfig, dict, or None.")
+
+    try:
+        return HeadRateConfig(**value)
+    except TypeError as exc:
+        raise ValueError(f"QuantizeConfig: invalid `lm_head_rate` keys: `{value}`.") from exc
+
+
 def _default_damp_percent(method: METHOD) -> float:
     return 0.005 if method == METHOD.QQQ else 0.05
 
@@ -2451,6 +2493,13 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
 
     lm_head: bool = field(default=False)
 
+    # class-aware rate allocation for `lm_head` rows; requires `lm_head=True`.
+    lm_head_rate: Optional[Union[Dict[str, Any], HeadRateConfig]] = field(
+        default=None,
+        metadata={"help": "Class-aware rate allocation for the softmax head. "
+                  "Example: lm_head_rate=HeadRateConfig(budget=1.0)."},
+    )
+
     method: METHOD = field(default=METHOD.GPTQ)
 
     # Serialized/exported checkpoint layout. This is the authoritative post-quantization format.
@@ -2697,6 +2746,15 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
             self.desc_act = self.default_desc_act()
         elif not isinstance(self.desc_act, bool):
             self.desc_act = bool(self.desc_act)
+
+        if self.lm_head_rate is not None:
+            if not self.lm_head:
+                log.warn(
+                    f"{self.__class__.__name__}: `lm_head_rate` has no effect without `lm_head=True`; ignoring."
+                )
+                self.lm_head_rate = None
+            else:
+                self.lm_head_rate = _normalize_head_rate(self.lm_head_rate)
 
         if self.meta is not None:
             if not isinstance(self.meta, dict):
@@ -2983,6 +3041,7 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
             "opt_channel_scale_clamp_min": "opt_channel_scale_clamp_min",
             "opt_channel_scale_clamp_max": "opt_channel_scale_clamp_max",
             "scale_search_chunked_activations": "scale_search_chunked_activations",
+            "lm_head_rate": "lm_head_rate",
         }
         if isinstance(meta_payload, dict):
             for normalized_key, meta_key in meta_field_map.items():
@@ -3086,6 +3145,11 @@ class BaseQuantizeConfig(metaclass=QuantizeConfigMeta):
             else self.moe_vram_strategy
         )
         meta_payload["moe_vram_strategy_devices"] = self.moe_vram_strategy_devices
+        if self.lm_head_rate is not None:
+            meta_payload["lm_head_rate"] = {
+                "budget": self.lm_head_rate.budget,
+                "temperature": self.lm_head_rate.temperature,
+            }
         self._update_meta_payload(meta_payload)
 
         out = {

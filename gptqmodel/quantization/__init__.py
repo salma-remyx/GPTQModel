@@ -26,6 +26,7 @@ from .config import (
                      GGUFConfig,
                      GPTAQConfig,
                      GPTQConfig,
+                     HeadRateConfig,
                      HessianConfig,
                      ParoConfig,
                      PreProcessorCode,

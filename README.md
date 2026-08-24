@@ -243,6 +243,7 @@ Marlin uses `GPTQMODEL_MARLIN_USE_FP32` (default: enabled) to control fp32 accum
 * 🚀 Python 3.13.3t (free-threading, GIL disabled) support for multi-GPU accelerated quantization for MoE models and multi-core CPU boost for packing.
 * ✨ Asymmetric `Sym=False` support. 
 * ✨ `lm_head` module quant inference support for further VRAM reduction.
+* ✨ Class-aware rate allocation for `lm_head` quantization (`lm_head_rate`): spends quantization rate on the vocabulary rows that dominate output KL, from calibration logits collected in the same forward pass. Adapted from [SoftWater](https://arxiv.org/abs/2608.12026).
 * 🚀 [Microsoft/BITBLAS](https://github.com/microsoft/BitBLAS) optimized tile based inference.
 * 💯 CI unit-test coverage for all supported models and kernels including post-quantization quality regression.
 
@@ -394,6 +395,31 @@ model.quantize(calibration_dataset, batch_size=1)
 
 model.save(quant_path)
 ```
+
+#### Class-Aware Rate Allocation for `lm_head`
+
+In small LLMs the softmax head holds a large share of all parameters, and its vocabulary rows are not equally
+important: token frequencies are Zipfian. `lm_head_rate` quantizes the head with a per-class rate allocation
+instead of the same grid for every row, using class statistics collected from the same calibration forward
+pass that builds the GPTQ Hessian (no extra pass, no extra memory beyond one `vocab_size` vector).
+
+```py
+from gptqmodel import GPTQConfig, GPTQModel, HeadRateConfig
+
+quant_config = GPTQConfig(
+    bits=4,
+    group_size=128,
+    lm_head=True,
+    lm_head_rate=HeadRateConfig(budget=0.75),
+)
+
+model = GPTQModel.load(model_id, quant_config)
+model.quantize(calibration_dataset, batch_size=1)
+```
+
+`budget` is the mean of the per-class multipliers. At `1.0` the head keeps its average grid but the rate is
+redistributed across classes; below `1.0` the head also covers a smaller total dynamic range, which shrinks
+the average step and lowers head-induced KL further. Requires `lm_head=True` and is ignored otherwise.
 
 #### Other Quantization Formats
 

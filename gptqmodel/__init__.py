@@ -301,6 +301,7 @@ from .quantization import (
     GGUFConfig,
     GPTAQConfig,
     GPTQConfig,
+    HeadRateConfig,
     QuantizeConfig,
     RTNConfig,
     WeightOnlyConfig,
