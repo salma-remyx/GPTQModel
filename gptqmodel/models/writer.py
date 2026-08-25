@@ -21,6 +21,7 @@ from transformers import AutoConfig, PreTrainedTokenizerFast, ProcessorMixin
 from transformers.models.auto.tokenization_auto import get_tokenizer_config
 
 from ..adapter.adapter import HF_ADAPTER_FILE_NAME, HF_ADAPTER_WEIGHT_KEY_PREFIX, Lora
+from ..adapter.language_lora import LanguageAwareLora, save_language_adapters
 from ..adapter.peft import LoraConfig
 from ..quantization.config import (
     FORMAT,
@@ -511,6 +512,12 @@ def ModelWriter(cls):
         assert isinstance(self.quantize_config.adapter, Lora)
 
         assert hasattr(self, 'lora_results')
+
+        # per-language corrections: write one standard HF adapter directory per language
+        if self.lora_results and any(isinstance(adapter, LanguageAwareLora) for adapter in self.lora_results.values()):
+            save_language_adapters(model=self, save_dir=save_dir, model_save_dir=model_save_dir)
+            del self.lora_results  # TODO REFRACTOR
+            return
 
         # save lora tensors
         if self.lora_results:  # TODO REFRACTOR

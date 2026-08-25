@@ -290,6 +290,11 @@ class Lora(Adapter):
 
 ADAPTER_MAPPING = {Lora.name(): Lora}
 
+# imported at module tail to avoid a circular import: language_lora depends on Lora
+from .language_lora import LanguageAwareLora  # noqa: E402
+
+ADAPTER_MAPPING[LanguageAwareLora.name()] = LanguageAwareLora
+
 # accept both Adapter cls instance or Dict()
 def normalize_adapter(adapter:  Union[Dict, Adapter]):
     """Normalizes serialized adapter metadata into a concrete adapter instance."""

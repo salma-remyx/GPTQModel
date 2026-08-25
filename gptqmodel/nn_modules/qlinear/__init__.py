@@ -343,7 +343,7 @@ class BaseQuantLinear(nn.Module):
     ) -> Tuple[bool, Optional[Exception]]:
         cls.verify_supports_params()
 
-        if adapter is not None and adapter.__class__ not in cls.SUPPORTS_ADAPTERS:
+        if adapter is not None and not any(isinstance(adapter, supported) for supported in cls.SUPPORTS_ADAPTERS):
             err = f"{cls} does not support adapter: {adapter}"
             return False, NotImplementedError(err)
 
